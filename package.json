@@ -1,6 +1,6 @@
 {
   "name": "node-http-interceptor",
-  "version": "0.1.5",
+  "version": "0.1.6",
   "description": "node-http-interceptor",
   "author": "Chao Yang <chao@yang.to>",
   "license": "Apache-2.0",
