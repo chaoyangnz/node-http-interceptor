@@ -1,6 +1,6 @@
 {
   "name": "node-http-interceptor",
-  "version": "0.1.6",
+  "version": "0.1.7",
   "description": "node-http-interceptor",
   "author": "Chao Yang <chao@yang.to>",
   "license": "Apache-2.0",
@@ -17,8 +17,9 @@
     "lint": "eslint . --ext .ts,.tsx",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
-    "prerelease": "npm login && bump --tag",
+    "prerelease": "npm run clean && npm run build && npm login && bump --tag",
     "release": "npm publish",
+    "postrelease": "git push && git push tags",
     "postinstall": ""
   },
   "publishConfig": {
