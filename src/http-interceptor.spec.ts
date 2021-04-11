@@ -5,9 +5,8 @@ import {
   Request,
   Headers,
 } from './http-interceptor';
-import { transform } from 'lodash';
-import { v4 as uuidv4 } from 'uuid';
-import * as mime from 'media-typer';
+import { transform, truncate } from 'lodash';
+import * as mime from 'content-type';
 import { ClientRequest } from 'http';
 import axios from 'axios';
 
@@ -17,9 +16,6 @@ import axios from 'axios';
  * @param context
  */
 function onRequestInitiated(request: ClientRequest, context: RequestContext) {
-  // initial additional request meta
-  context.requestId = uuidv4();
-  context.requestStartedAt = new Date().getTime();
   // update user-agent
   request.setHeader('user-agent', 'no-name');
 }
@@ -33,6 +29,7 @@ function onRequestSent(request: Request, context: RequestContext) {
   const { url, method } = request;
   console.info(
     `🔵 ${method} ${url}`,
+    context.timing,
     context.requestId,
     filteredRequest(request),
   );
@@ -51,11 +48,11 @@ function onResponseReceived(
 ) {
   const { statusCode } = response;
   const { url, method } = request;
-  const { requestId, requestStartedAt } = context;
-  const timing = new Date().getTime() - requestStartedAt;
+  const { requestId, timing } = context;
   const indicator = statusCode < 400 ? '🟢' : '🟡';
   console.info(
-    `${indicator} ${statusCode} ${method} ${url} (${timing} ms)`,
+    `${indicator} ${statusCode} ${method} ${url}`,
+    timing,
     requestId,
     filteredRequest(request),
     filteredResponse(response),
@@ -80,7 +77,8 @@ describe('HttpInterceptor', () => {
   });
 
   it('should', async () => {
-    await axios.get('https://google.com');
+    const response = await axios.get<string>('https://chao.yang.to');
+    expect(response.data).toBeTruthy();
   });
 });
 
@@ -124,7 +122,7 @@ function filteredBody(body: Buffer, headers: Headers) {
     return binary;
   }
   const mediaType = mime.parse(headers['content-type']);
-  const normalisedMediaType = `${mediaType.type}/${mediaType.subtype}`;
+  const normalisedMediaType = mediaType.type;
   const textualMimeTypes = [
     'text/plain',
     'text/html',
@@ -132,10 +130,15 @@ function filteredBody(body: Buffer, headers: Headers) {
     'application/csv',
     'application/x-www-form-urlencoded',
   ];
+  if (!textualMimeTypes.includes(normalisedMediaType)) {
+    return binary;
+  }
 
-  return !textualMimeTypes.includes(normalisedMediaType)
-    ? binary
-    : body.toString();
+  return normalisedMediaType === 'application/json'
+    ? body.toString()
+    : truncate(body.toString(), {
+        length: 500,
+      });
 }
 
 function obfuscate(

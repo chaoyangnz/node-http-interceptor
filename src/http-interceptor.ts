@@ -1,10 +1,12 @@
 import * as http from 'http';
-import { ClientRequest, IncomingMessage, RequestOptions } from 'http';
 import * as https from 'https';
 import { URL } from 'url';
-import { wrap, unwrap } from 'shimmer';
+import { Socket } from 'net';
+import { ClientRequest, IncomingMessage, RequestOptions } from 'http';
 import * as EventEmitter from 'events';
 import debug from 'debug';
+import { v4 as uuid } from 'uuid';
+import { wrap, unwrap } from 'shimmer';
 
 export interface Headers {
   [name: string]: number | string | string[] | undefined;
@@ -25,7 +27,40 @@ export interface Response {
 }
 
 export interface RequestContext {
+  timing: Timing;
+  requestId: string;
   [name: string]: any;
+}
+
+export interface Timing {
+  request: {
+    // ClientRequest created
+    initiated?: number;
+    // socket::lookup
+    lookup?: number;
+    // socket::connect
+    connect?: number;
+    // socket::secureConnect
+    tls?: number;
+    // request::abort
+    abort?: number;
+    // request::timeout
+    timeout?: number;
+    // request::write
+    write?: number;
+    // request::end
+    end?: number;
+  };
+  response: {
+    // response::readable
+    readable?: number;
+    // response::data
+    read?: number;
+    // response::end
+    end?: number;
+    // response::error
+    error?: number;
+  };
 }
 
 export type Event =
@@ -54,24 +89,37 @@ const log = debug('http-interceptor');
  */
 export class HttpInterceptor {
   emitter: EventEmitter;
+  enabled: boolean;
 
-  constructor() {
+  constructor(immediatelyEnable = true) {
     this.emitter = new EventEmitter();
-    this.wrap(http);
-    this.wrap(https);
+    if (immediatelyEnable) {
+      this.enable();
+    }
+  }
+
+  enable() {
+    if (!this.enabled) {
+      this.wrap(http);
+      this.wrap(https);
+      this.enabled = !this.enabled;
+    }
   }
 
   disable() {
-    this.unwrap(http);
-    this.unwrap(https);
+    if (this.enabled) {
+      this.unwrap(http);
+      this.unwrap(https);
+      this.enabled = !this.enabled;
+    }
   }
 
-  unwrap(http) {
+  private unwrap(http) {
     unwrap(http, 'request');
     unwrap(https, 'request');
   }
 
-  wrap(http) {
+  private wrap(http) {
     wrap(http, 'get', function (_) {
       return (...args) => {
         // eslint-disable-next-line prefer-spread
@@ -84,7 +132,15 @@ export class HttpInterceptor {
     wrap(http, 'request', (original) => {
       return (...args) => {
         const request: ClientRequest = original.apply(http, args);
-        const context: RequestContext = {};
+        const context: RequestContext = {
+          requestId: uuid(),
+          timing: {
+            request: {
+              initiated: now(),
+            },
+            response: {},
+          },
+        };
         this.emitter.emit('request.initiated', request, context);
         const req: Request = {
           url: this.resolveHttpRequestUrl(args),
@@ -92,103 +148,186 @@ export class HttpInterceptor {
           headers: Object.assign({}, request.getHeaders()),
         };
 
-        wrap(request, 'emit', (original) => {
-          return (...args: ['response', IncomingMessage]) => {
-            try {
-              const [eventName, response] = args;
-              switch (eventName) {
-                case 'response': {
-                  const chunks = [];
-                  wrap(response, 'emit', (original) => {
-                    return (
-                      ...args: ['data' | 'end' | 'error', any | undefined]
-                    ) => {
-                      try {
-                        const [eventName, data] = args;
-                        switch (eventName) {
-                          case 'data': {
-                            chunks.push(data);
-                            break;
-                          }
-                          case 'end': {
-                            const res = Object.freeze({
-                              statusCode: response.statusCode,
-                              statusText: response.statusMessage,
-                              headers: response.headers,
-                              body: Buffer.concat(chunks),
-                            });
-                            this.emitter.emit(
-                              'response.received',
-                              req,
-                              res,
-                              context,
-                            );
-                            break;
-                          }
-                          case 'error': {
-                            this.emitter.emit('response.error', data);
-                            break;
-                          }
-                        }
-                      } catch (err) {
-                        log('interceptor error, ignore', err);
-                      }
-                      return original.apply(response, args);
-                    };
-                  });
-                }
-              }
-            } catch (err) {
-              log('interceptor error, ignore', err);
-            }
-
-            return original.apply(request, args);
-          };
-        });
-
-        const chunks = [];
-        wrap(request, 'write', (original) => {
-          return (...args) => {
-            try {
-              const [chunk, encoding] = args;
-              if (chunk && typeof chunk !== 'function') {
-                chunks.push(
-                  typeof chunk === 'string'
-                    ? Buffer.from(chunk, encoding || 'utf-8')
-                    : chunk,
-                );
-              }
-            } catch (err) {
-              log('interceptor error, ignore', err);
-            }
-
-            return original.apply(request, args);
-          };
-        });
-
-        wrap(request, 'end', (original) => {
-          return (...args) => {
-            try {
-              const [chunk, encoding] = args;
-              if (chunk && typeof chunk !== 'function') {
-                chunks.push(
-                  typeof chunk === 'string'
-                    ? Buffer.from(chunk, encoding || 'utf-8')
-                    : chunk,
-                );
-              }
-
-              req.body = Buffer.concat(chunks);
-              this.emitter.emit('request.sent', Object.freeze(req), context);
-            } catch (err) {
-              log('interceptor error, ignore', err);
-            }
-
-            return original.apply(request, args);
-          };
-        });
-
+        this.wrapRequest(request, req, context);
         return request;
+      };
+    });
+  }
+
+  private wrapRequest(
+    request: ClientRequest,
+    req: Request,
+    context: RequestContext,
+  ) {
+    wrap(request, 'emit', (original) => {
+      return (
+        ...args: [
+          'response' | 'socket' | 'abort' | 'timeout',
+          IncomingMessage | Socket,
+        ]
+      ) => {
+        try {
+          const [eventName, response] = args;
+          switch (eventName) {
+            case 'response': {
+              this.wrapResponse(response as IncomingMessage, req, context);
+              break;
+            }
+            case 'socket': {
+              this.wrapSocket(response as Socket, context);
+              break;
+            }
+            case 'abort': {
+              context.timing.request.abort = now();
+              break;
+            }
+            // socket also has a timeout event, which is accurate?
+            case 'timeout': {
+              context.timing.request.timeout = now();
+              break;
+            }
+          }
+        } catch (err) {
+          this.handleWrapperError(err);
+        }
+
+        return original.apply(request, args);
+      };
+    });
+
+    const chunks = [];
+    wrap(request, 'write', (original) => {
+      return (...args) => {
+        try {
+          if (!context.timing.request.write) {
+            context.timing.request.write = now();
+          }
+          const [chunk, encoding] = args;
+          if (chunk && typeof chunk !== 'function') {
+            chunks.push(
+              typeof chunk === 'string'
+                ? Buffer.from(chunk, encoding || 'utf-8')
+                : chunk,
+            );
+          }
+        } catch (err) {
+          this.handleWrapperError(err);
+        }
+
+        return original.apply(request, args);
+      };
+    });
+
+    wrap(request, 'end', (original) => {
+      return (...args) => {
+        try {
+          const time = now();
+          if (!context.timing.request.write) {
+            // never write, end directly when 0 byte body
+            context.timing.request.write = time;
+          }
+          context.timing.request.end = time;
+          const [chunk, encoding] = args;
+          if (chunk && typeof chunk !== 'function') {
+            chunks.push(
+              typeof chunk === 'string'
+                ? Buffer.from(chunk, encoding || 'utf-8')
+                : chunk,
+            );
+          }
+
+          req.body = Buffer.concat(chunks);
+          this.emitter.emit('request.sent', Object.freeze(req), context);
+        } catch (err) {
+          this.handleWrapperError(err);
+        }
+
+        return original.apply(request, args);
+      };
+    });
+  }
+
+  private wrapResponse(
+    response: IncomingMessage,
+    req: Request,
+    context: RequestContext,
+  ) {
+    const chunks = [];
+    wrap(response, 'emit', (original) => {
+      return (
+        ...args: [
+          'readable' | 'data' | 'end' | 'error',
+          any | undefined,
+          any | undefined,
+        ]
+      ) => {
+        try {
+          const [eventName, data, encoding] = args;
+          switch (eventName) {
+            case 'readable': {
+              context.timing.response.readable = now();
+              break;
+            }
+            case 'data': {
+              if (!context.timing.response.read) {
+                context.timing.response.read = now();
+              }
+              chunks.push(
+                typeof data === 'string'
+                  ? Buffer.from(data, encoding || 'utf-8')
+                  : data,
+              );
+              break;
+            }
+            case 'end': {
+              const time = now();
+              if (!context.timing.response.read) {
+                // never read, end directly when 0 byte body
+                context.timing.response.read = time;
+              }
+              context.timing.response.end = time;
+              const res = Object.freeze({
+                statusCode: response.statusCode,
+                statusText: response.statusMessage,
+                headers: response.headers,
+                body: Buffer.concat(chunks),
+              });
+              this.emitter.emit('response.received', req, res, context);
+              break;
+            }
+            case 'error': {
+              context.timing.response.error = now();
+              this.emitter.emit('response.error', data);
+              break;
+            }
+          }
+        } catch (err) {
+          this.handleWrapperError(err);
+        }
+        return original.apply(response, args);
+      };
+    });
+  }
+
+  private wrapSocket(socket: Socket, context: RequestContext) {
+    wrap(socket, 'emit', (original) => {
+      return (...args: [string]) => {
+        const [eventName] = args;
+        switch (eventName) {
+          case 'lookup': {
+            context.timing.request.lookup = now();
+            break;
+          }
+          case 'connect': {
+            context.timing.request.connect = now();
+            break;
+          }
+          case 'secureConnect': {
+            context.timing.request.tls = now();
+          }
+        }
+
+        return original.apply(socket, args);
       };
     });
   }
@@ -230,4 +369,13 @@ export class HttpInterceptor {
   on<T extends Event>(event: T, listener: Callback<T>) {
     this.emitter.addListener(event, listener);
   }
+
+  private handleWrapperError(error) {
+    console.warn(`HttpInterceptor error ignored: ${error.message}`);
+    log('interceptor error, ignore', error);
+  }
+}
+
+function now() {
+  return new Date().getTime();
 }
