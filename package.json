@@ -3,7 +3,7 @@
   "version": "0.1.7",
   "description": "node-http-interceptor",
   "author": "Chao Yang <chao@yang.to>",
-  "license": "Apache-2.0",
+  "license": "MIT",
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "engines": {
@@ -12,13 +12,14 @@
   "scripts": {
     "start": "node lib/index.js",
     "clean": "rimraf coverage build tmp",
+    "prebuild": "npm run clean",
     "build": "tsc -p tsconfig.release.json",
     "build:watch": "tsc -w -p tsconfig.release.json",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
-    "prerelease": "npm run clean && npm run build && npm login && bump --tag",
-    "release": "npm publish",
+    "prerelease": "npm run build",
+    "release": "npm login && bump --tag && npm publish",
     "postrelease": "git push && git push tags",
     "postinstall": ""
   },

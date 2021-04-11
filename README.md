@@ -6,7 +6,7 @@
 
 # node-http-interceptor
 
-👩Intercept the low-level http request which is helpful when you need to do logging or instrumentation.
+Intercept the low-level http request which is helpful when you need to do logging or instrumentation.
 
 ## Usage
 
