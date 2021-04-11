@@ -20,7 +20,7 @@
     "test:watch": "jest --watch",
     "prerelease": "npm run build",
     "release": "npm login && bump --tag && npm publish",
-    "postrelease": "git push && git push tags",
+    "postrelease": "git push && git push --tags",
     "postinstall": ""
   },
   "publishConfig": {

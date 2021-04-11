@@ -6,7 +6,16 @@
 
 # node-http-interceptor
 
-Intercept the low-level http request which is helpful when you need to do logging or instrumentation.
+⚡ Intercept the low-level http requests, which is helpful when you need to do logging, monitoring or instrumentation etc.
+
+## Features
+
+- transparent to the normal http flow without inference
+  - all errors in the interceptor are silently suppressed, only logged but not thrown
+  - never consume the original stream (`ClientRequest` or `IncomingMessage`) when downstream consumer is not going to read or write
+- generate a requestId and request timings by default in `RequestContext`
+- capability of enabling or disabling the interception
+- `RequestContext` is a request scope container to hold any data during the request-response round-trip, which is like the concept of `HttpServletRequest.getAttributes()` in Java.
 
 ## Usage
 
