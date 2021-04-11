@@ -1,3 +1,1 @@
-export function helloWorld(): void {
-  console.log("works")
-}
+export * from './http-interceptor'
