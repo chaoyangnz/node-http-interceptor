@@ -5,10 +5,111 @@ import {
   Request,
   Headers,
 } from './http-interceptor';
-import { transform, truncate } from 'lodash';
+import { transform, truncate, cloneDeep } from 'lodash';
 import * as mime from 'content-type';
 import { ClientRequest } from 'http';
 import axios from 'axios';
+import * as http from 'http';
+import * as https from 'https';
+
+const log = jest.fn().mockImplementation((...args) => {
+  console.info(args);
+});
+
+describe('HttpInterceptor', () => {
+  let httpInterceptor: HttpInterceptor;
+  beforeEach(() => {
+    httpInterceptor = new HttpInterceptor();
+    httpInterceptor.on('request.initiated', onRequestInitiated);
+    httpInterceptor.on('request.sent', onRequestSent);
+    httpInterceptor.on('response.received', onResponseReceived);
+    httpInterceptor.on('response.error', onResponseError);
+  });
+
+  afterEach(() => {
+    httpInterceptor.disable();
+    jest.clearAllMocks();
+  });
+
+  it('should wrap http.request', async () => {
+    const res = await axios.get<string>('https://chao.yang.to');
+    expect(res.data).toBeTruthy();
+    expect((http.request as any).__wrapped).toBeTruthy();
+    expect((https.request as any).__wrapped).toBeTruthy();
+
+    expect(log.mock.calls[0][2]).toEqual(log.mock.calls[1][2]); // requestId
+    expect(log.mock.calls[0][3]).toEqual(log.mock.calls[1][3]); // request
+    assertRequestListener();
+    assertResponseListener();
+
+    function assertRequestListener() {
+      const [message, timing, requestId, request] = log.mock.calls[0];
+      expect(message).toEqual('🔵 GET https://chao.yang.to/');
+      expect(timing.socket).toEqual({});
+      expect(timing.request.initiated).toBeGreaterThan(0);
+      expect(timing.request.write).toBeGreaterThanOrEqual(
+        timing.request.initiated,
+      );
+      expect(timing.request.end).toBeGreaterThanOrEqual(timing.request.write);
+      expect(requestId.length).toEqual(36);
+      expect(request).toMatchObject({
+        url: 'https://chao.yang.to/',
+        method: 'GET',
+        headers: {
+          accept: 'application/json, text/plain, */*',
+          'user-agent': 'no-name',
+          host: 'chao.yang.to',
+        },
+        body: '<0 bytes binary>',
+      });
+    }
+
+    function assertResponseListener(...args) {
+      const [message, timing, requestId, request, response] = log.mock.calls[1];
+      expect(message).toEqual('🟢 200 GET https://chao.yang.to/');
+      expect(timing.socket.lookup).toBeGreaterThan(0);
+      expect(timing.socket.connect).toBeGreaterThan(timing.socket.lookup);
+      expect(timing.socket.tls).toBeGreaterThan(timing.socket.lookup);
+      expect(timing.request.initiated).toBeGreaterThan(0);
+      expect(timing.request.write).toBeGreaterThanOrEqual(
+        timing.request.initiated,
+      );
+      expect(timing.request.end).toBeGreaterThanOrEqual(timing.request.write);
+      expect(timing.response.read).toBeGreaterThan(0);
+      expect(timing.response.end).toBeGreaterThanOrEqual(timing.response.read);
+      expect(requestId.length).toEqual(36);
+      expect(request).toMatchObject({
+        url: 'https://chao.yang.to/',
+        method: 'GET',
+        headers: {
+          accept: 'application/json, text/plain, */*',
+          'user-agent': 'no-name',
+          host: 'chao.yang.to',
+        },
+        body: '<0 bytes binary>',
+      });
+      expect(response).toMatchObject({
+        statusCode: 200,
+        statusText: 'OK',
+        headers: {
+          'content-type': 'text/html; charset=UTF-8',
+          'transfer-encoding': 'chunked',
+          server: 'cloudflare',
+        },
+      });
+      expect(response.body.length).toBeGreaterThan(0);
+    }
+  });
+
+  it('should unwrap http.request', async () => {
+    httpInterceptor.disable();
+    const response = await axios.get<string>('https://chao.yang.to');
+    expect(response.data).toBeTruthy();
+    expect((http.request as any).__wrapped).toBeFalsy();
+    expect((https.request as any).__wrapped).toBeFalsy();
+    expect(log).not.toHaveBeenCalled();
+  });
+});
 
 /**
  * when ClientRequest is created, you have the chance to mutate its config before it is actually sent.
@@ -27,9 +128,9 @@ function onRequestInitiated(request: ClientRequest, context: RequestContext) {
  */
 function onRequestSent(request: Request, context: RequestContext) {
   const { url, method } = request;
-  console.info(
+  log(
     `🔵 ${method} ${url}`,
-    context.timing,
+    cloneDeep(context.timing),
     context.requestId,
     filteredRequest(request),
   );
@@ -50,9 +151,9 @@ function onResponseReceived(
   const { url, method } = request;
   const { requestId, timing } = context;
   const indicator = statusCode < 400 ? '🟢' : '🟡';
-  console.info(
+  log(
     `${indicator} ${statusCode} ${method} ${url}`,
-    timing,
+    cloneDeep(timing),
     requestId,
     filteredRequest(request),
     filteredResponse(response),
@@ -63,24 +164,9 @@ function onResponseReceived(
  * when error occurred in getting the response, but request is sent.
  * @param error
  */
-function onError(error: any) {
+function onResponseError(error: Error) {
   console.warn('🔴 error', error);
 }
-
-describe('HttpInterceptor', () => {
-  beforeAll(() => {
-    const httpInterceptor = new HttpInterceptor();
-    httpInterceptor.on('request.initiated', onRequestInitiated);
-    httpInterceptor.on('request.sent', onRequestSent);
-    httpInterceptor.on('response.received', onResponseReceived);
-    httpInterceptor.on('response.error', onError);
-  });
-
-  it('should', async () => {
-    const response = await axios.get<string>('https://chao.yang.to');
-    expect(response.data).toBeTruthy();
-  });
-});
 
 function filteredRequest(request: Request) {
   const { url, method, headers, body } = request;

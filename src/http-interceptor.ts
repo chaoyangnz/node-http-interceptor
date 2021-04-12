@@ -33,15 +33,17 @@ export interface RequestContext {
 }
 
 export interface Timing {
-  request: {
-    // ClientRequest created
-    initiated?: number;
+  socket: {
     // socket::lookup
     lookup?: number;
     // socket::connect
     connect?: number;
     // socket::secureConnect
     tls?: number;
+  }
+  request: {
+    // ClientRequest created
+    initiated?: number;
     // request::abort
     abort?: number;
     // request::timeout
@@ -52,14 +54,14 @@ export interface Timing {
     end?: number;
   };
   response: {
-    // response::readable
-    readable?: number;
     // response::data
     read?: number;
     // response::end
     end?: number;
     // response::error
     error?: number;
+    // response::aborted
+    aborted?: number;
   };
 }
 
@@ -76,7 +78,7 @@ type Callback<T extends Event> = T extends 'request.initiated'
   : T extends 'response.received'
   ? (request: Request, response: Response, context: RequestContext) => void
   : T extends 'response.error'
-  ? (error: any) => void
+  ? (error: Error) => void
   : never;
 
 const log = debug('http-interceptor');
@@ -108,15 +110,10 @@ export class HttpInterceptor {
 
   disable() {
     if (this.enabled) {
-      this.unwrap(http);
-      this.unwrap(https);
+      unwrap(http, 'request');
+      unwrap(https, 'request');
       this.enabled = !this.enabled;
     }
-  }
-
-  private unwrap(http) {
-    unwrap(http, 'request');
-    unwrap(https, 'request');
   }
 
   private wrap(http) {
@@ -135,6 +132,7 @@ export class HttpInterceptor {
         const context: RequestContext = {
           requestId: uuid(),
           timing: {
+            socket: {},
             request: {
               initiated: now(),
             },
@@ -169,12 +167,12 @@ export class HttpInterceptor {
         try {
           const [eventName, response] = args;
           switch (eventName) {
-            case 'response': {
-              this.wrapResponse(response as IncomingMessage, req, context);
-              break;
-            }
             case 'socket': {
               this.wrapSocket(response as Socket, context);
+              break;
+            }
+            case 'response': {
+              this.wrapResponse(response as IncomingMessage, req, context);
               break;
             }
             case 'abort': {
@@ -219,7 +217,7 @@ export class HttpInterceptor {
     });
 
     wrap(request, 'end', (original) => {
-      return (...args) => {
+      return (...args: [string | Buffer, BufferEncoding]) => {
         try {
           const time = now();
           if (!context.timing.request.write) {
@@ -228,7 +226,7 @@ export class HttpInterceptor {
           }
           context.timing.request.end = time;
           const [chunk, encoding] = args;
-          if (chunk && typeof chunk !== 'function') {
+          if (chunk && typeof chunk !== 'function') { // if no data, that is a callback
             chunks.push(
               typeof chunk === 'string'
                 ? Buffer.from(chunk, encoding || 'utf-8')
@@ -256,25 +254,21 @@ export class HttpInterceptor {
     wrap(response, 'emit', (original) => {
       return (
         ...args: [
-          'readable' | 'data' | 'end' | 'error',
-          any | undefined,
+          'data' | 'end' | 'error' | 'aborted',
+          string | Buffer | Error | undefined,
           any | undefined,
         ]
       ) => {
         try {
-          const [eventName, data, encoding] = args;
+          const [eventName, data] = args;
           switch (eventName) {
-            case 'readable': {
-              context.timing.response.readable = now();
-              break;
-            }
             case 'data': {
               if (!context.timing.response.read) {
                 context.timing.response.read = now();
               }
               chunks.push(
                 typeof data === 'string'
-                  ? Buffer.from(data, encoding || 'utf-8')
+                  ? Buffer.from(data, response.readableEncoding || 'utf-8')
                   : data,
               );
               break;
@@ -300,6 +294,10 @@ export class HttpInterceptor {
               this.emitter.emit('response.error', data);
               break;
             }
+            case 'aborted': {
+              context.timing.response.aborted = now();
+              break;
+            }
           }
         } catch (err) {
           this.handleWrapperError(err);
@@ -315,15 +313,15 @@ export class HttpInterceptor {
         const [eventName] = args;
         switch (eventName) {
           case 'lookup': {
-            context.timing.request.lookup = now();
+            context.timing.socket.lookup = now();
             break;
           }
           case 'connect': {
-            context.timing.request.connect = now();
+            context.timing.socket.connect = now();
             break;
           }
           case 'secureConnect': {
-            context.timing.request.tls = now();
+            context.timing.socket.tls = now();
           }
         }
 
