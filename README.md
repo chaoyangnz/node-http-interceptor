@@ -49,21 +49,25 @@ interceptor.enable()
 ### stubbing
 
 ```typescript
-const interceptor = new HttpInterceptor((req: Request) => ({
-    statusCode: 200,
-    statusMessage: 'OK',
-    headers: {
-      'content-type': 'text/plain',
-      'x-custom-header': 'blabla'
-    },
-    body: Buffer.from('test')
-  })
-);
+const interceptor = new HttpInterceptor();
+
+interceptor.stub((req: Request) => ({
+  statusCode: 200,
+  statusMessage: 'OK',
+  headers: {
+    'content-type': 'text/plain',
+    'x-custom-header': 'blabla'
+  },
+  body: Buffer.from('test')
+}));
 
 interceptor.on('response.received', (response: Response, context: RequestContext) => {
   expect(response.body.toString()).toEqual('test')
 })
 interceptor.enabled();
+
+// later on
+interceptor.unstub()
 ```
 
 

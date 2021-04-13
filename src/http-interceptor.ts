@@ -95,11 +95,11 @@ const log = debug('http-interceptor');
 export class HttpInterceptor {
   private emitter: EventEmitter;
   private enabled: boolean;
-  stub?: Stub
+  private _stub?: Stub
 
   constructor(stub?: Stub) {
     this.emitter = new EventEmitter();
-    this.stub = stub
+    this.stub(stub)
   }
 
   enable() {
@@ -115,6 +115,18 @@ export class HttpInterceptor {
       unwrap(http, 'request');
       unwrap(https, 'request');
       this.enabled = !this.enabled;
+    }
+  }
+
+  stub(stub: Stub) {
+    if (stub) {
+      this._stub = stub
+    }
+  }
+
+  unstub() {
+    if(this._stub) {
+      this._stub = undefined
     }
   }
 
@@ -151,8 +163,8 @@ export class HttpInterceptor {
 
         this.wrapRequest(request, req, context);
 
-        if (this.stub) {
-          const stubResponse = this.stub(req)
+        if (this._stub) {
+          const stubResponse = this._stub(req)
           if (stubResponse) {
             process.nextTick(() => {
               const incomingMessage = new IncomingMessage(new FakeSocket(args[0], { usesHttps: http === https }) as unknown as Socket)

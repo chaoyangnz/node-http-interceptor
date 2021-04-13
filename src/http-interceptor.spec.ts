@@ -124,11 +124,11 @@ describe('HttpInterceptor', () => {
           body: Buffer.from('test'),
         };
       };
-      httpInterceptor.stub = stub;
+      httpInterceptor.stub(stub);
     });
 
     afterEach(() => {
-      httpInterceptor.stub = undefined;
+      httpInterceptor.unstub();
     });
 
     it('should wrap http.request and response with the stubbed', async () => {
