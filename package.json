@@ -4,6 +4,10 @@
   "description": "node-http-interceptor",
   "author": "Chao Yang <chao@yang.to>",
   "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "https://github.com/chaoyangnz/node-http-interceptor.git"
+  },
   "main": "lib/index.js",
   "types": "lib/index.d.ts",
   "engines": {
