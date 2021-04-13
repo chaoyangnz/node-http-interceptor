@@ -22,6 +22,8 @@
 
 ## Usage
 
+### hooks
+
 ```typescript
 import { HttpInterceptor, RequestContext } from './http-interceptor';
 
@@ -41,8 +43,29 @@ interceptor.on('response.received', (response: Response, context: RequestContext
 interceptor.on('response.error', (error: any, context: RequestContext) => {
   // log the error
 })
-
+interceptor.enable()
 ```
+
+### stubbing
+
+```typescript
+const interceptor = new HttpInterceptor((req: Request) => ({
+    statusCode: 200,
+    statusMessage: 'OK',
+    headers: {
+      'content-type': 'text/plain',
+      'x-custom-header': 'blabla'
+    },
+    body: Buffer.from('test')
+  })
+);
+
+interceptor.on('response.received', (response: Response, context: RequestContext) => {
+  expect(response.body.toString()).toEqual('test')
+})
+interceptor.enabled();
+```
+
 
 
 [ts-badge]: https://img.shields.io/badge/TypeScript-4.2-blue.svg

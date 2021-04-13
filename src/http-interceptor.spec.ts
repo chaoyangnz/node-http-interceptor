@@ -4,6 +4,7 @@ import {
   Response,
   Request,
   Headers,
+  Stub,
 } from './http-interceptor';
 import { transform, truncate, cloneDeep } from 'lodash';
 import * as mime from 'content-type';
@@ -24,6 +25,7 @@ describe('HttpInterceptor', () => {
     httpInterceptor.on('request.sent', onRequestSent);
     httpInterceptor.on('response.received', onResponseReceived);
     httpInterceptor.on('response.error', onResponseError);
+    httpInterceptor.enable();
   });
 
   afterEach(() => {
@@ -90,7 +92,7 @@ describe('HttpInterceptor', () => {
       });
       expect(response).toMatchObject({
         statusCode: 200,
-        statusText: 'OK',
+        statusMessage: 'OK',
         headers: {
           'content-type': 'text/html; charset=UTF-8',
           'transfer-encoding': 'chunked',
@@ -108,6 +110,103 @@ describe('HttpInterceptor', () => {
     expect((http.request as any).__wrapped).toBeFalsy();
     expect((https.request as any).__wrapped).toBeFalsy();
     expect(log).not.toHaveBeenCalled();
+  });
+
+  describe('stub', () => {
+    beforeEach(() => {
+      const stub: Stub = (request) => {
+        return {
+          statusCode: 200,
+          statusMessage: 'OK',
+          headers: {
+            'content-type': 'text/plain',
+          },
+          body: Buffer.from('test'),
+        };
+      };
+      httpInterceptor.stub = stub;
+    });
+
+    afterEach(() => {
+      httpInterceptor.stub = undefined;
+    });
+
+    it('should wrap http.request and response with the stubbed', async () => {
+      const res = await axios.get<string>('https://chao.yang.to');
+      expect(res.data).toBeTruthy();
+      expect((http.request as any).__wrapped).toBeTruthy();
+      expect((https.request as any).__wrapped).toBeTruthy();
+
+      expect(log.mock.calls[0][2]).toEqual(log.mock.calls[1][2]); // requestId
+      expect(log.mock.calls[0][3]).toEqual(log.mock.calls[1][3]); // request
+      assertRequestListener();
+      assertResponseListener();
+
+      function assertRequestListener() {
+        const [message, timing, requestId, request] = log.mock.calls[0];
+        expect(message).toEqual('🔵 GET https://chao.yang.to/');
+        expect(timing.socket).toEqual({});
+        expect(timing.request.initiated).toBeGreaterThan(0);
+        expect(timing.request.write).toBeGreaterThanOrEqual(
+          timing.request.initiated,
+        );
+        expect(timing.request.end).toBeGreaterThanOrEqual(timing.request.write);
+        expect(requestId.length).toEqual(36);
+        expect(request).toMatchObject({
+          url: 'https://chao.yang.to/',
+          method: 'GET',
+          headers: {
+            accept: 'application/json, text/plain, */*',
+            'user-agent': 'no-name',
+            host: 'chao.yang.to',
+          },
+          body: '<0 bytes binary>',
+        });
+      }
+
+      function assertResponseListener(...args) {
+        const [
+          message,
+          timing,
+          requestId,
+          request,
+          response,
+        ] = log.mock.calls[1];
+        expect(message).toEqual('🟢 200 GET https://chao.yang.to/');
+        expect(timing.socket.lookup).toBeFalsy();
+        expect(timing.socket.connect).toBeFalsy();
+        expect(timing.socket.tls).toBeFalsy();
+        expect(timing.request.initiated).toBeGreaterThan(0);
+        expect(timing.request.write).toBeGreaterThanOrEqual(
+          timing.request.initiated,
+        );
+        expect(timing.request.end).toBeGreaterThanOrEqual(timing.request.write);
+        expect(timing.response.read).toBeGreaterThan(0);
+        expect(timing.response.end).toBeGreaterThanOrEqual(
+          timing.response.read,
+        );
+        expect(requestId.length).toEqual(36);
+        expect(request).toMatchObject({
+          url: 'https://chao.yang.to/',
+          method: 'GET',
+          headers: {
+            accept: 'application/json, text/plain, */*',
+            'user-agent': 'no-name',
+            host: 'chao.yang.to',
+          },
+          body: '<0 bytes binary>',
+        });
+        expect(response).toMatchObject({
+          statusCode: 200,
+          statusMessage: 'OK',
+          headers: {
+            'content-type': 'text/plain',
+            server: 'http-interceptor/stub',
+          },
+        });
+        expect(response.body.length).toBeGreaterThan(0);
+      }
+    });
   });
 });
 
@@ -179,10 +278,10 @@ function filteredRequest(request: Request) {
 }
 
 function filteredResponse(response: Response) {
-  const { statusCode, statusText, headers, body } = response;
+  const { statusCode, statusMessage, headers, body } = response;
   return {
     statusCode,
-    statusText,
+    statusMessage: statusMessage,
     headers: filteredHeaders(headers),
     body: filteredBody(body, headers),
   };

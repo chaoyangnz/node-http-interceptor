@@ -2,11 +2,12 @@ import * as http from 'http';
 import * as https from 'https';
 import { URL } from 'url';
 import { Socket } from 'net';
-import { ClientRequest, IncomingMessage, RequestOptions } from 'http';
+import { ClientRequest, ClientRequestArgs, IncomingHttpHeaders, IncomingMessage, RequestOptions } from 'http';
 import * as EventEmitter from 'events';
 import debug from 'debug';
 import { v4 as uuid } from 'uuid';
 import { wrap, unwrap } from 'shimmer';
+import { FakeSocket } from './fake-socket';
 
 export interface Headers {
   [name: string]: number | string | string[] | undefined;
@@ -21,7 +22,7 @@ export interface Request {
 
 export interface Response {
   statusCode: number;
-  statusText: string;
+  statusMessage: string;
   headers: Headers;
   body?: Buffer;
 }
@@ -71,7 +72,7 @@ export type Event =
   | 'response.received'
   | 'response.error';
 
-type Callback<T extends Event> = T extends 'request.initiated'
+type Listener<T extends Event> = T extends 'request.initiated'
   ? (request: ClientRequest, context: RequestContext) => void
   : T extends 'request.sent'
   ? (request: Request, context: RequestContext) => void
@@ -80,6 +81,8 @@ type Callback<T extends Event> = T extends 'request.initiated'
   : T extends 'response.error'
   ? (error: Error) => void
   : never;
+
+export type Stub = (request: Request) => Response
 
 const log = debug('http-interceptor');
 
@@ -90,14 +93,13 @@ const log = debug('http-interceptor');
  * To apply the interception, make sure the interceptor is initialised as early as possible.
  */
 export class HttpInterceptor {
-  emitter: EventEmitter;
-  enabled: boolean;
+  private emitter: EventEmitter;
+  private enabled: boolean;
+  stub?: Stub
 
-  constructor(immediatelyEnable = true) {
+  constructor(stub?: Stub) {
     this.emitter = new EventEmitter();
-    if (immediatelyEnable) {
-      this.enable();
-    }
+    this.stub = stub
   }
 
   enable() {
@@ -129,6 +131,7 @@ export class HttpInterceptor {
     wrap(http, 'request', (original) => {
       return (...args) => {
         const request: ClientRequest = original.apply(http, args);
+
         const context: RequestContext = {
           requestId: uuid(),
           timing: {
@@ -147,6 +150,28 @@ export class HttpInterceptor {
         };
 
         this.wrapRequest(request, req, context);
+
+        if (this.stub) {
+          const stubResponse = this.stub(req)
+          if (stubResponse) {
+            process.nextTick(() => {
+              const incomingMessage = new IncomingMessage(new FakeSocket(args[0], { usesHttps: http === https }) as unknown as Socket)
+              incomingMessage.statusCode = stubResponse.statusCode || 200
+              incomingMessage.statusMessage = stubResponse.statusMessage || 'OK'
+              incomingMessage.headers = {
+                server: 'http-interceptor/stub',
+                'content-type': 'application/octet-stream',
+                date: new Date().toUTCString(),
+                ...stubResponse.headers
+              }
+              incomingMessage.push(stubResponse.body)
+              incomingMessage.push(null)
+              incomingMessage.complete = true
+              request.emit('response', incomingMessage)
+            })
+          }
+        }
+
         return request;
       };
     });
@@ -282,7 +307,7 @@ export class HttpInterceptor {
               context.timing.response.end = time;
               const res = Object.freeze({
                 statusCode: response.statusCode,
-                statusText: response.statusMessage,
+                statusMessage: response.statusMessage,
                 headers: response.headers,
                 body: Buffer.concat(chunks),
               });
@@ -364,7 +389,7 @@ export class HttpInterceptor {
     }
   }
 
-  on<T extends Event>(event: T, listener: Callback<T>) {
+  on<T extends Event>(event: T, listener: Listener<T>) {
     this.emitter.addListener(event, listener);
   }
 
