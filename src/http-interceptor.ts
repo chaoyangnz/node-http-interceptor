@@ -172,6 +172,7 @@ export class HttpInterceptor {
               incomingMessage.statusMessage = stubResponse.statusMessage || 'OK'
               incomingMessage.headers = {
                 server: 'http-interceptor/stub',
+                'x-stub': 'true',
                 'content-type': 'application/octet-stream',
                 date: new Date().toUTCString(),
                 ...stubResponse.headers
