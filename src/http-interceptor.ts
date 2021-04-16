@@ -79,7 +79,7 @@ type Listener<T extends Event> = T extends 'request.initiated'
   : T extends 'response.received'
   ? (request: Request, response: Response, context: RequestContext) => void
   : T extends 'response.error'
-  ? (error: Error) => void
+  ? (request: Request, error: Error, context: RequestContext) => void
   : never;
 
 export type Stub = (request: Request) => Response
@@ -329,7 +329,7 @@ export class HttpInterceptor {
             }
             case 'error': {
               context.timing.response.error = now();
-              this.emitter.emit('response.error', data);
+              this.emitter.emit('response.error', req, data, context);
               break;
             }
             case 'aborted': {

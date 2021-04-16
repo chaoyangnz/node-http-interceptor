@@ -33,84 +33,86 @@ describe('HttpInterceptor', () => {
     jest.clearAllMocks();
   });
 
-  it('should wrap http.request', async () => {
-    const res = await axios.get<string>('https://chao.yang.to');
-    expect(res.data).toBeTruthy();
-    expect((http.request as any).__wrapped).toBeTruthy();
-    expect((https.request as any).__wrapped).toBeTruthy();
+  describe('hooks', () => {
+    it('should wrap http.request', async () => {
+      const res = await axios.get<string>('https://chao.yang.to');
+      expect(res.data).toBeTruthy();
+      expect((http.request as any).__wrapped).toBeTruthy();
+      expect((https.request as any).__wrapped).toBeTruthy();
 
-    expect(log.mock.calls[0][2]).toEqual(log.mock.calls[1][2]); // requestId
-    expect(log.mock.calls[0][3]).toEqual(log.mock.calls[1][3]); // request
-    assertRequestListener();
-    assertResponseListener();
+      expect(log.mock.calls[0][2]).toEqual(log.mock.calls[1][2]); // requestId
+      expect(log.mock.calls[0][3]).toEqual(log.mock.calls[1][3]); // request
+      assertRequestListener();
+      assertResponseListener();
 
-    function assertRequestListener() {
-      const [message, timing, requestId, request] = log.mock.calls[0];
-      expect(message).toEqual('🔵 GET https://chao.yang.to/');
-      expect(timing.socket).toEqual({});
-      expect(timing.request.initiated).toBeGreaterThan(0);
-      expect(timing.request.write).toBeGreaterThanOrEqual(
-        timing.request.initiated,
-      );
-      expect(timing.request.end).toBeGreaterThanOrEqual(timing.request.write);
-      expect(requestId.length).toEqual(36);
-      expect(request).toMatchObject({
-        url: 'https://chao.yang.to/',
-        method: 'GET',
-        headers: {
-          accept: 'application/json, text/plain, */*',
-          'user-agent': 'no-name',
-          host: 'chao.yang.to',
-        },
-        body: '<0 bytes binary>',
-      });
-    }
+      function assertRequestListener() {
+        const [message, timing, requestId, request] = log.mock.calls[0];
+        expect(message).toEqual('🔵 GET https://chao.yang.to/');
+        expect(timing.socket).toEqual({});
+        expect(timing.request.initiated).toBeGreaterThan(0);
+        expect(timing.request.write).toBeGreaterThanOrEqual(
+          timing.request.initiated,
+        );
+        expect(timing.request.end).toBeGreaterThanOrEqual(timing.request.write);
+        expect(requestId.length).toEqual(36);
+        expect(request).toMatchObject({
+          url: 'https://chao.yang.to/',
+          method: 'GET',
+          headers: {
+            accept: 'application/json, text/plain, */*',
+            'user-agent': 'no-name',
+            host: 'chao.yang.to',
+          },
+          body: '<0 bytes binary>',
+        });
+      }
 
-    function assertResponseListener(...args) {
-      const [message, timing, requestId, request, response] = log.mock.calls[1];
-      expect(message).toEqual('🟢 200 GET https://chao.yang.to/');
-      expect(timing.socket.lookup).toBeGreaterThan(0);
-      expect(timing.socket.connect).toBeGreaterThan(timing.socket.lookup);
-      expect(timing.socket.tls).toBeGreaterThan(timing.socket.lookup);
-      expect(timing.request.initiated).toBeGreaterThan(0);
-      expect(timing.request.write).toBeGreaterThanOrEqual(
-        timing.request.initiated,
-      );
-      expect(timing.request.end).toBeGreaterThanOrEqual(timing.request.write);
-      expect(timing.response.read).toBeGreaterThan(0);
-      expect(timing.response.end).toBeGreaterThanOrEqual(timing.response.read);
-      expect(requestId.length).toEqual(36);
-      expect(request).toMatchObject({
-        url: 'https://chao.yang.to/',
-        method: 'GET',
-        headers: {
-          accept: 'application/json, text/plain, */*',
-          'user-agent': 'no-name',
-          host: 'chao.yang.to',
-        },
-        body: '<0 bytes binary>',
-      });
-      expect(response).toMatchObject({
-        statusCode: 200,
-        statusMessage: 'OK',
-        headers: {
-          'content-type': 'text/html; charset=UTF-8',
-          'transfer-encoding': 'chunked',
-          server: 'cloudflare',
-        },
-      });
-      expect(response.body.length).toBeGreaterThan(0);
-    }
-  });
+      function assertResponseListener(...args) {
+        const [message, timing, requestId, request, response] = log.mock.calls[1];
+        expect(message).toEqual('🟢 200 GET https://chao.yang.to/');
+        expect(timing.socket.lookup).toBeGreaterThan(0);
+        expect(timing.socket.connect).toBeGreaterThan(timing.socket.lookup);
+        expect(timing.socket.tls).toBeGreaterThan(timing.socket.lookup);
+        expect(timing.request.initiated).toBeGreaterThan(0);
+        expect(timing.request.write).toBeGreaterThanOrEqual(
+          timing.request.initiated,
+        );
+        expect(timing.request.end).toBeGreaterThanOrEqual(timing.request.write);
+        expect(timing.response.read).toBeGreaterThan(0);
+        expect(timing.response.end).toBeGreaterThanOrEqual(timing.response.read);
+        expect(requestId.length).toEqual(36);
+        expect(request).toMatchObject({
+          url: 'https://chao.yang.to/',
+          method: 'GET',
+          headers: {
+            accept: 'application/json, text/plain, */*',
+            'user-agent': 'no-name',
+            host: 'chao.yang.to',
+          },
+          body: '<0 bytes binary>',
+        });
+        expect(response).toMatchObject({
+          statusCode: 200,
+          statusMessage: 'OK',
+          headers: {
+            'content-type': 'text/html; charset=UTF-8',
+            'transfer-encoding': 'chunked',
+            server: 'cloudflare',
+          },
+        });
+        expect(response.body.length).toBeGreaterThan(0);
+      }
+    });
 
-  it('should unwrap http.request', async () => {
-    httpInterceptor.disable();
-    const response = await axios.get<string>('https://chao.yang.to');
-    expect(response.data).toBeTruthy();
-    expect((http.request as any).__wrapped).toBeFalsy();
-    expect((https.request as any).__wrapped).toBeFalsy();
-    expect(log).not.toHaveBeenCalled();
-  });
+    it('should unwrap http.request', async () => {
+      httpInterceptor.disable();
+      const response = await axios.get<string>('https://chao.yang.to');
+      expect(response.data).toBeTruthy();
+      expect((http.request as any).__wrapped).toBeFalsy();
+      expect((https.request as any).__wrapped).toBeFalsy();
+      expect(log).not.toHaveBeenCalled();
+    });
+  })
 
   describe('stub', () => {
     beforeEach(() => {
@@ -210,6 +212,8 @@ describe('HttpInterceptor', () => {
   });
 });
 
+
+//////////////////////// HOOKS FOR TESTS ///////////////////////
 /**
  * when ClientRequest is created, you have the chance to mutate its config before it is actually sent.
  * @param request
@@ -263,7 +267,7 @@ function onResponseReceived(
  * when error occurred in getting the response, but request is sent.
  * @param error
  */
-function onResponseError(error: Error) {
+function onResponseError(request: Request, error: Error, context: RequestContext) {
   console.warn('🔴 error', error);
 }
 
