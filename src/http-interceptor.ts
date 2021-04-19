@@ -2,7 +2,13 @@ import * as http from 'http';
 import * as https from 'https';
 import { URL } from 'url';
 import { Socket } from 'net';
-import { ClientRequest, ClientRequestArgs, IncomingHttpHeaders, IncomingMessage, RequestOptions } from 'http';
+import {
+  ClientRequest,
+  IncomingHttpHeaders,
+  IncomingMessage,
+  OutgoingHttpHeaders,
+  RequestOptions,
+} from 'http';
 import * as EventEmitter from 'events';
 import debug from 'debug';
 import { v4 as uuid } from 'uuid';
@@ -10,7 +16,7 @@ import { wrap, unwrap } from 'shimmer';
 import { FakeSocket } from './fake-socket';
 
 export interface Headers {
-  [name: string]: number | string | string[] | undefined;
+  [name: string]: string | string[];
 }
 
 export interface Request {
@@ -41,7 +47,7 @@ export interface Timing {
     connect?: number;
     // socket::secureConnect
     tls?: number;
-  }
+  };
   request: {
     // ClientRequest created
     initiated?: number;
@@ -82,7 +88,7 @@ type Listener<T extends Event> = T extends 'request.initiated'
   ? (request: Request, error: Error, context: RequestContext) => void
   : never;
 
-export type Stub = (request: Request) => Response
+export type Stub = (request: Request) => Response;
 
 const log = debug('http-interceptor');
 
@@ -95,11 +101,11 @@ const log = debug('http-interceptor');
 export class HttpInterceptor {
   private emitter: EventEmitter;
   private enabled: boolean;
-  private _stub?: Stub
+  private _stub?: Stub;
 
   constructor(stub?: Stub) {
     this.emitter = new EventEmitter();
-    this.stub(stub)
+    this.stub(stub);
   }
 
   enable() {
@@ -120,29 +126,29 @@ export class HttpInterceptor {
 
   stub(stub: Stub) {
     if (stub) {
-      this._stub = stub
+      this._stub = stub;
     }
   }
 
   unstub() {
-    if(this._stub) {
-      this._stub = undefined
+    if (this._stub) {
+      this._stub = undefined;
     }
   }
 
-  private wrap(http) {
-    wrap(http, 'get', function (_) {
+  private wrap(transport) {
+    wrap(transport, 'get', function (_) {
       return (...args) => {
         // eslint-disable-next-line prefer-spread
-        const request = http.request.apply(http, args);
+        const request = transport.request.apply(transport, args);
         request.end();
         return request;
       };
     });
 
-    wrap(http, 'request', (original) => {
+    wrap(transport, 'request', (original) => {
       return (...args) => {
-        const request: ClientRequest = original.apply(http, args);
+        const request: ClientRequest = original.apply(transport, args);
 
         const context: RequestContext = {
           requestId: uuid(),
@@ -156,32 +162,37 @@ export class HttpInterceptor {
         };
         this.emitter.emit('request.initiated', request, context);
         const req: Request = {
-          url: this.resolveHttpRequestUrl(args),
-          method: this.resolveHttpRequestMethod(args),
-          headers: Object.assign({}, request.getHeaders()),
+          url: resolveHttpRequestUrl(args),
+          method: resolveHttpRequestMethod(args),
+          headers: normaliseHeaders(request.getHeaders()),
         };
 
         this.wrapRequest(request, req, context);
 
         if (this._stub) {
-          const stubResponse = this._stub(req)
+          const stubResponse = this._stub(req);
           if (stubResponse) {
             process.nextTick(() => {
-              const incomingMessage = new IncomingMessage(new FakeSocket(args[0], { usesHttps: http === https }) as unknown as Socket)
-              incomingMessage.statusCode = stubResponse.statusCode || 200
-              incomingMessage.statusMessage = stubResponse.statusMessage || 'OK'
+              const incomingMessage = new IncomingMessage(
+                (new FakeSocket(args[0], {
+                  usesHttps: transport === https,
+                }) as unknown) as Socket,
+              );
+              incomingMessage.statusCode = stubResponse.statusCode || 200;
+              incomingMessage.statusMessage =
+                stubResponse.statusMessage || 'OK';
               incomingMessage.headers = {
                 server: 'http-interceptor/stub',
                 'x-stub': 'true',
                 'content-type': 'application/octet-stream',
                 date: new Date().toUTCString(),
-                ...stubResponse.headers
-              }
-              incomingMessage.push(stubResponse.body)
-              incomingMessage.push(null)
-              incomingMessage.complete = true
-              request.emit('response', incomingMessage)
-            })
+                ...normaliseHeaders(stubResponse.headers),
+              };
+              incomingMessage.push(stubResponse.body);
+              incomingMessage.push(null);
+              incomingMessage.complete = true;
+              request.emit('response', incomingMessage);
+            });
           }
         }
 
@@ -264,7 +275,8 @@ export class HttpInterceptor {
           }
           context.timing.request.end = time;
           const [chunk, encoding] = args;
-          if (chunk && typeof chunk !== 'function') { // if no data, that is a callback
+          if (chunk && typeof chunk !== 'function') {
+            // if no data, that is a callback
             chunks.push(
               typeof chunk === 'string'
                 ? Buffer.from(chunk, encoding || 'utf-8')
@@ -321,7 +333,7 @@ export class HttpInterceptor {
               const res = Object.freeze({
                 statusCode: response.statusCode,
                 statusMessage: response.statusMessage,
-                headers: response.headers,
+                headers: normaliseHeaders(response.headers),
                 body: Buffer.concat(chunks),
               });
               this.emitter.emit('response.received', req, res, context);
@@ -368,40 +380,6 @@ export class HttpInterceptor {
     });
   }
 
-  private resolveHttpRequestUrl(args: any[]) {
-    const urlOrOptions = args[0];
-    if (typeof urlOrOptions === 'string') {
-      return urlOrOptions;
-    } else if (urlOrOptions instanceof URL) {
-      return urlOrOptions.toString();
-    } else if ('hostname' in urlOrOptions || 'host' in urlOrOptions) {
-      const options: RequestOptions = urlOrOptions;
-      const host = options.host || options.hostname;
-      const port = options.port ? `:${options.port}` : '';
-      const protocol =
-        options.protocol ||
-        (options.agent instanceof https.Agent ? 'https:' : 'http:');
-      return `${protocol}//${host}${port}${options.path}`;
-    } else {
-      log('cannot resolve URL', args);
-      return '<unknown>';
-    }
-  }
-
-  private resolveHttpRequestMethod(args: any[]) {
-    const urlOrOptions = args[0];
-    if (typeof urlOrOptions === 'string' || urlOrOptions instanceof URL) {
-      const options: RequestOptions = args[1];
-      return options.method;
-    } else if ('method' in urlOrOptions) {
-      const options: RequestOptions = urlOrOptions;
-      return options.method;
-    } else {
-      log('cannot resolve method', args);
-      return 'GET';
-    }
-  }
-
   on<T extends Event>(event: T, listener: Listener<T>) {
     this.emitter.addListener(event, listener);
   }
@@ -414,4 +392,65 @@ export class HttpInterceptor {
 
 function now() {
   return new Date().getTime();
+}
+
+function normaliseHeaders(
+  headers: IncomingHttpHeaders | OutgoingHttpHeaders,
+): Headers {
+  const normalisedHeaders = {};
+  Object.keys(headers).forEach((header) => {
+    const value = headers[header];
+    if (value) {
+      if (typeof value === 'number') {
+        normalisedHeaders[header] = value.toString(10);
+      } else if (Array.isArray(value)) {
+        const dedupeValue = [...new Set(value)];
+        normalisedHeaders[header] =
+          dedupeValue.length === 1 ? dedupeValue[0] : dedupeValue; // flatten
+      } else {
+        normalisedHeaders[header] = value;
+      }
+    }
+  });
+  return normalisedHeaders;
+}
+
+function resolveHttpRequestUrl(args: any[]) {
+  const urlOrOptions = args[0];
+  if (typeof urlOrOptions === 'string') {
+    return urlOrOptions;
+  } else if (urlOrOptions instanceof URL) {
+    return urlOrOptions.toString();
+  } else if ('hostname' in urlOrOptions || 'host' in urlOrOptions) {
+    const options: RequestOptions = urlOrOptions;
+    const isSecure = options.agent instanceof https.Agent;
+    const defaultPort = isSecure ? 443 : 80;
+    const host = options.host || options.hostname;
+    let port = '';
+    if (host.includes(':')) {
+      // host includes port
+      port = '';
+    } else if (options.port && options.port !== defaultPort) {
+      port = `:${options.port}`;
+    }
+    const protocol = options.protocol || (isSecure ? 'https:' : 'http:');
+    return `${protocol}//${host}${port}${options.path}`;
+  } else {
+    log('cannot resolve URL', args);
+    return '<unknown>';
+  }
+}
+
+function resolveHttpRequestMethod(args: any[]) {
+  const urlOrOptions = args[0];
+  if (typeof urlOrOptions === 'string' || urlOrOptions instanceof URL) {
+    const options: RequestOptions = args[1];
+    return options.method;
+  } else if ('method' in urlOrOptions) {
+    const options: RequestOptions = urlOrOptions;
+    return options.method;
+  } else {
+    log('cannot resolve method, fallback to GET', args);
+    return 'GET';
+  }
 }
