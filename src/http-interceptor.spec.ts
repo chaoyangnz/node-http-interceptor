@@ -18,22 +18,24 @@ const log = jest.fn().mockImplementation((...args) => {
 });
 
 describe('HttpInterceptor', () => {
-  let httpInterceptor: HttpInterceptor;
-  beforeEach(() => {
-    httpInterceptor = new HttpInterceptor();
-    httpInterceptor.on('request.initiated', onRequestInitiated);
-    httpInterceptor.on('request.sent', onRequestSent);
-    httpInterceptor.on('response.received', onResponseReceived);
-    httpInterceptor.on('response.error', onResponseError);
-    httpInterceptor.enable();
-  });
-
-  afterEach(() => {
-    httpInterceptor.disable();
-    jest.clearAllMocks();
-  });
-
   describe('hooks', () => {
+
+    let httpInterceptor: HttpInterceptor;
+
+    beforeEach(() => {
+      httpInterceptor = new HttpInterceptor();
+      httpInterceptor.on('request.initiated', onRequestInitiated);
+      httpInterceptor.on('request.sent', onRequestSent);
+      httpInterceptor.on('response.received', onResponseReceived);
+      httpInterceptor.on('response.error', onResponseError);
+      httpInterceptor.enable();
+    });
+
+    afterEach(() => {
+      httpInterceptor.disable();
+      jest.clearAllMocks();
+    });
+
     it('should wrap http.request', async () => {
       const res = await axios.get<string>('https://chao.yang.to');
       expect(res.data).toBeTruthy();
@@ -114,8 +116,50 @@ describe('HttpInterceptor', () => {
     });
   })
 
-  describe('stub', () => {
+  describe('body peek', () => {
+    let httpInterceptor: HttpInterceptor;
+
     beforeEach(() => {
+      httpInterceptor = new HttpInterceptor({
+        peekRequestBody(request: Omit<Request, 'body'>): boolean {
+          return false
+        },
+        peekResponseBody(response: Omit<Response, 'body'>): boolean {
+          return false
+        }
+      })
+      httpInterceptor.on('request.initiated', onRequestInitiated);
+      httpInterceptor.on('request.sent', onRequestSent);
+      httpInterceptor.on('response.received', onResponseReceived);
+      httpInterceptor.on('response.error', onResponseError);
+      httpInterceptor.enable()
+    })
+
+    afterEach(() => {
+      httpInterceptor.disable()
+      jest.clearAllMocks()
+    })
+
+    it('should not peek request body and response body', async () => {
+      const res = await axios.get<string>('https://chao.yang.to');
+      expect(res.data).toBeTruthy()
+      expect(log).toHaveBeenCalledTimes(2)
+      const request = log.mock.calls[0][3];
+      expect(request.body).toBe('<unread>')
+      const response = log.mock.calls[1][4];
+      expect(response.body).toBe('<unread>')
+    });
+  })
+
+  describe('stub', () => {
+    let httpInterceptor: HttpInterceptor;
+
+    beforeEach(() => {
+      httpInterceptor = new HttpInterceptor();
+      httpInterceptor.on('request.initiated', onRequestInitiated);
+      httpInterceptor.on('request.sent', onRequestSent);
+      httpInterceptor.on('response.received', onResponseReceived);
+      httpInterceptor.on('response.error', onResponseError);
       const stub: Stub = (request) => {
         return {
           statusCode: 200,
@@ -127,10 +171,13 @@ describe('HttpInterceptor', () => {
         };
       };
       httpInterceptor.stub(stub);
+      httpInterceptor.enable();
     });
 
     afterEach(() => {
       httpInterceptor.unstub();
+      httpInterceptor.disable();
+      jest.clearAllMocks();
     });
 
     it('should wrap http.request and response with the stubbed', async () => {
@@ -277,7 +324,7 @@ function filteredRequest(request: Request) {
     url,
     method,
     headers: filteredHeaders(headers),
-    body: filteredBody(body, headers),
+    body: body === false ? '<unread>' : filteredBody(body, headers),
   };
 }
 
@@ -287,7 +334,7 @@ function filteredResponse(response: Response) {
     statusCode,
     statusMessage: statusMessage,
     headers: filteredHeaders(headers),
-    body: filteredBody(body, headers),
+    body: body === false ? '<unread>' : filteredBody(body, headers),
   };
 }
 

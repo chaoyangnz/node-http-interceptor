@@ -23,14 +23,14 @@ export interface Request {
   url: string;
   method: string;
   headers: Headers;
-  body?: Buffer;
+  body?: Buffer | false;
 }
 
 export interface Response {
   statusCode: number;
   statusMessage: string;
   headers: Headers;
-  body?: Buffer;
+  body?: Buffer | false;
 }
 
 export interface RequestContext {
@@ -88,6 +88,11 @@ type Listener<T extends Event> = T extends 'request.initiated'
   ? (request: Request, error: Error, context: RequestContext) => void
   : never;
 
+export interface Options {
+  peekRequestBody?(request: Omit<Request, 'body'>): boolean;
+  peekResponseBody?(response: Omit<Response, 'body'>): boolean;
+}
+
 export type Stub = (request: Request) => Response;
 
 const log = debug('http-interceptor');
@@ -102,10 +107,11 @@ export class HttpInterceptor {
   private emitter: EventEmitter;
   private enabled: boolean;
   private _stub?: Stub;
+  private options: Options;
 
-  constructor(stub?: Stub) {
+  constructor(options: Options = {}) {
     this.emitter = new EventEmitter();
-    this.stub(stub);
+    this.options = options;
   }
 
   enable() {
@@ -165,6 +171,7 @@ export class HttpInterceptor {
           url: resolveHttpRequestUrl(args),
           method: resolveHttpRequestMethod(args),
           headers: normaliseHeaders(request.getHeaders()),
+          body: false
         };
 
         this.wrapRequest(request, req, context);
@@ -214,14 +221,21 @@ export class HttpInterceptor {
         ]
       ) => {
         try {
-          const [eventName, response] = args;
+          const [eventName, data] = args;
           switch (eventName) {
             case 'socket': {
-              this.wrapSocket(response as Socket, context);
+              this.wrapSocket(data as Socket, context);
               break;
             }
             case 'response': {
-              this.wrapResponse(response as IncomingMessage, req, context);
+              const response = data as IncomingMessage;
+              const res: Response = {
+                statusCode: response.statusCode,
+                statusMessage: response.statusMessage,
+                headers: normaliseHeaders(response.headers),
+                body: false
+              };
+              this.wrapResponse(response, res, req, context);
               break;
             }
             case 'abort': {
@@ -242,6 +256,17 @@ export class HttpInterceptor {
       };
     });
 
+    this.peekRequestBody(request, req, context);
+  }
+
+  private peekRequestBody(
+    request: ClientRequest,
+    req: Request,
+    context: RequestContext,
+  ) {
+    const notPeek =
+      this.options.peekRequestBody && !this.options.peekRequestBody(req);
+
     const chunks = [];
     wrap(request, 'write', (original) => {
       return (...args) => {
@@ -249,13 +274,15 @@ export class HttpInterceptor {
           if (!context.timing.request.write) {
             context.timing.request.write = now();
           }
-          const [chunk, encoding] = args;
-          if (chunk && typeof chunk !== 'function') {
-            chunks.push(
-              typeof chunk === 'string'
-                ? Buffer.from(chunk, encoding || 'utf-8')
-                : chunk,
-            );
+          if (!notPeek) {
+            const [chunk, encoding] = args;
+            if (chunk && typeof chunk !== 'function') {
+              chunks.push(
+                typeof chunk === 'string'
+                  ? Buffer.from(chunk, encoding || 'utf-8')
+                  : chunk,
+              );
+            }
           }
         } catch (err) {
           this.handleWrapperError(err);
@@ -274,17 +301,19 @@ export class HttpInterceptor {
             context.timing.request.write = time;
           }
           context.timing.request.end = time;
-          const [chunk, encoding] = args;
-          if (chunk && typeof chunk !== 'function') {
-            // if no data, that is a callback
-            chunks.push(
-              typeof chunk === 'string'
-                ? Buffer.from(chunk, encoding || 'utf-8')
-                : chunk,
-            );
-          }
+          if (!notPeek) {
+            const [chunk, encoding] = args;
+            if (chunk && typeof chunk !== 'function') {
+              // if no data, that is a callback
+              chunks.push(
+                typeof chunk === 'string'
+                  ? Buffer.from(chunk, encoding || 'utf-8')
+                  : chunk,
+              );
+            }
 
-          req.body = Buffer.concat(chunks);
+            req.body = Buffer.concat(chunks);
+          }
           this.emitter.emit('request.sent', Object.freeze(req), context);
         } catch (err) {
           this.handleWrapperError(err);
@@ -297,9 +326,21 @@ export class HttpInterceptor {
 
   private wrapResponse(
     response: IncomingMessage,
+    res: Response,
     req: Request,
     context: RequestContext,
   ) {
+    const notPeek =
+      this.options.peekResponseBody && !this.options.peekResponseBody(res);
+    if (notPeek) { // if not peek we can emit earlier
+      this.emitter.emit(
+        'response.received',
+        Object.freeze(req),
+        Object.freeze(res),
+        context,
+      );
+    }
+
     const chunks = [];
     wrap(response, 'emit', (original) => {
       return (
@@ -316,11 +357,14 @@ export class HttpInterceptor {
               if (!context.timing.response.read) {
                 context.timing.response.read = now();
               }
-              chunks.push(
-                typeof data === 'string'
-                  ? Buffer.from(data, response.readableEncoding || 'utf-8')
-                  : data,
-              );
+
+              if (!notPeek) {
+                chunks.push(
+                  typeof data === 'string'
+                    ? Buffer.from(data, response.readableEncoding || 'utf-8')
+                    : data,
+                );
+              }
               break;
             }
             case 'end': {
@@ -330,13 +374,16 @@ export class HttpInterceptor {
                 context.timing.response.read = time;
               }
               context.timing.response.end = time;
-              const res = Object.freeze({
-                statusCode: response.statusCode,
-                statusMessage: response.statusMessage,
-                headers: normaliseHeaders(response.headers),
-                body: Buffer.concat(chunks),
-              });
-              this.emitter.emit('response.received', req, res, context);
+
+              if (!notPeek) {
+                res.body = Buffer.concat(chunks);
+                this.emitter.emit(
+                  'response.received',
+                  Object.freeze(req),
+                  Object.freeze(res),
+                  context,
+                );
+              }
               break;
             }
             case 'error': {
