@@ -126,6 +126,7 @@ export class HttpInterceptor {
     if (this.enabled) {
       unwrap(http, 'request');
       unwrap(https, 'request');
+      this.emitter.removeAllListeners()
       this.enabled = !this.enabled;
     }
   }
