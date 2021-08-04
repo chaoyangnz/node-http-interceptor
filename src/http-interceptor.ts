@@ -167,7 +167,11 @@ export class HttpInterceptor {
             response: {},
           },
         };
-        this.emitter.emit('request.initiated', request, context);
+        try {
+          this.emitter.emit('request.initiated', request, context);
+        } catch (e) {
+          this.handleWrapperError(e)
+        }
         const req: Request = {
           url: resolveHttpRequestUrl(args),
           method: resolveHttpRequestMethod(args),
