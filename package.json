@@ -22,9 +22,8 @@
     "lint": "eslint . --ext .ts,.tsx",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
-    "prerelease": "npm run build && npm run version",
-    "version": "npm login && bump --tag && cp package*.json lib",
-    "release": "cd lib && npm publish && cd -",
+    "prerelease": "npm run build",
+    "release": "npm login && bump --tag && cp package*.json lib && cd lib && npm publish && cd -",
     "postrelease": "git push && git push --tags",
     "postinstall": ""
   },
