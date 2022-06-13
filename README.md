@@ -22,6 +22,12 @@
 
 ## Usage
 
+### nodejs preload modules
+
+```shell
+node -r node-http-interceptor/register
+```
+
 ### hooks
 
 ```typescript
