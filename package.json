@@ -1,6 +1,6 @@
 {
   "name": "node-http-interceptor",
-  "version": "0.2.6",
+  "version": "0.2.7",
   "description": "node-http-interceptor",
   "author": "Chao Yang <chao@yang.to>",
   "license": "MIT",
@@ -8,8 +8,8 @@
     "type": "git",
     "url": "https://github.com/chaoyangnz/node-http-interceptor.git"
   },
-  "main": "lib/index.js",
-  "types": "lib/index.d.ts",
+  "main": "index.js",
+  "types": "index.d.ts",
   "engines": {
     "node": ">= 12.20 <15"
   },
@@ -17,13 +17,14 @@
     "start": "node lib/index.js",
     "clean": "rimraf coverage build lib tmp",
     "prebuild": "npm run clean",
-    "build": "tsc -p tsconfig.release.json",
+    "build": "tsc -p tsconfig.release.json && cp README.md lib && cp package*.json lib && cp LICENSE lib",
     "build:watch": "tsc -w -p tsconfig.release.json",
     "lint": "eslint . --ext .ts,.tsx",
     "test": "jest --coverage",
     "test:watch": "jest --watch",
-    "prerelease": "npm run build",
-    "release": "npm login && bump --tag && npm publish",
+    "prerelease": "npm run build && npm run version",
+    "version": "npm login && bump --tag && cp package*.json lib",
+    "release": "cd lib && npm publish && cd -",
     "postrelease": "git push && git push --tags",
     "postinstall": ""
   },
