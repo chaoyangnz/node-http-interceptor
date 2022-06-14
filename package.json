@@ -38,15 +38,15 @@
     "multipart-form-data-parser": "^0.2.1",
     "shimmer": "^1.2.1",
     "tslib": "~2.1.0",
-    "uuid": "^8.3.2"
+    "uuid": "^8.3.2",
+    "content-type": "^1.0.4"
   },
   "devDependencies": {
     "@types/jest": "~26.0.20",
     "@types/node": "~14.14.31",
     "@typescript-eslint/eslint-plugin": "~4.16.1",
     "@typescript-eslint/parser": "~4.16.1",
-    "axios": "^0.21.1",
-    "content-type": "^1.0.4",
+    "axios": "^0.21.4",
     "copyfiles": "^2.4.1",
     "eslint": "~7.21.0",
     "eslint-config-prettier": "~8.1.0",
@@ -57,7 +57,7 @@
     "prompts": "^2.4.1",
     "replace-in-file": "^6.2.0",
     "rimraf": "~3.0.2",
-    "shelljs": "^0.8.4",
+    "shelljs": "^0.8.5",
     "ts-jest": "~26.5.2",
     "ts-node": "^9.1.1",
     "tsutils": "~3.20.0",

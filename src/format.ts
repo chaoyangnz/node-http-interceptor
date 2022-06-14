@@ -1,7 +1,6 @@
 import { Request, RequestContext, Response, Headers } from './http-interceptor'
 import * as zlib from 'zlib';
 import * as crypto from 'crypto';
-import { transform, isArray, repeat } from 'lodash';
 import * as mime from 'content-type';
 import { prettyPrint } from 'multipart-form-data-parser';
 
@@ -106,17 +105,15 @@ function filteredResponse(response: Response, config: FormatConfig) {
 }
 
 function transformHeaders(headers: Headers, redactHeaders: string[]) {
-  return transform(
-    headers,
-    (result: any, value, name) => {
-      result[name] = redactHeaders.includes(name.toLowerCase())
-        ? (typeof value === 'string' ? [value] : value).map((val) =>
-          obfuscate(val, 10, 3)
-        )
-        : value;
-    },
-    {}
-  );
+  const result = {}
+  Object.entries(headers).forEach(([name, value]) => {
+    result[name] = redactHeaders.includes(name.toLowerCase())
+      ? (typeof value === 'string' ? [value] : value).map((val) =>
+        obfuscate(val, 10, 3)
+      )
+      : value;
+  })
+  return result
 }
 
 function transformBody(
@@ -130,7 +127,7 @@ function transformBody(
   const contentTypeHeader = headers['content-type'];
 
   const mediaType = mime.parse(
-    isArray(contentTypeHeader) ? contentTypeHeader[0] : contentTypeHeader
+    Array.isArray(contentTypeHeader) ? contentTypeHeader[0] : contentTypeHeader
   );
   const normalisedMediaType = mediaType.type;
 
@@ -185,4 +182,12 @@ function obfuscate(
     str.length - reservePrefix - reserveSuffix
   );
   return str.replace(middlePiece, repeat(replaceChar, 5));
+}
+
+function repeat(ch: string, times: number) {
+  let ret = ''
+  for (let i = 0; i < times; ++i) {
+    ret += ch
+  }
+  return ret
 }
