@@ -1,6 +1,6 @@
 {
   "name": "node-http-interceptor",
-  "version": "0.2.9",
+  "version": "0.2.10",
   "description": "node-http-interceptor",
   "author": "Chao Yang <chao@yang.to>",
   "license": "MIT",
@@ -31,7 +31,7 @@
     "access": "public"
   },
   "files": [
-    "lib/**/*"
+    "**/*"
   ],
   "dependencies": {
     "debug": "^4.3.1",
