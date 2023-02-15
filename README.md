@@ -24,6 +24,11 @@
 
 ### nodejs preload modules
 
+```
+npm i -g node-http-interceptor
+ln -vs "$(npm root -g)" "$HOME"/.node_modules
+```
+
 ```shell
 node -r node-http-interceptor/register
 ```
