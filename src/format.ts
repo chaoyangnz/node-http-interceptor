@@ -126,24 +126,27 @@ function transformBody(
 
   const contentTypeHeader = headers['content-type'];
 
-  const mediaType = mime.parse(
-    Array.isArray(contentTypeHeader) ? contentTypeHeader[0] : contentTypeHeader
-  );
-  const normalisedMediaType = mediaType.type;
-
-  const encoding = headers['content-encoding'];
-  if (encoding === 'gzip') {
-    body = zlib.gunzipSync(body);
-  }
-
-  // special handling for multipart/form-data, as we think it is a semi-textual content type.
-  if (normalisedMediaType === 'multipart/form-data') {
-    return prettyPrint(
-      body,
-      mediaType.parameters?.boundary,
-      wellKnownTextualContentTypes,
-      binaryLogMaxSize
+  let normalisedMediaType = 'application/octet-stream'
+  if (contentTypeHeader) {
+    const mediaType = mime.parse(
+      Array.isArray(contentTypeHeader) ? contentTypeHeader[0] : contentTypeHeader
     );
+    normalisedMediaType = mediaType.type;
+
+    const encoding = headers['content-encoding'];
+    if (encoding === 'gzip') {
+      body = zlib.gunzipSync(body);
+    }
+
+    // special handling for multipart/form-data, as we think it is a semi-textual content type.
+    if (normalisedMediaType === 'multipart/form-data') {
+      return prettyPrint(
+        body,
+        mediaType.parameters?.boundary,
+        wellKnownTextualContentTypes,
+        binaryLogMaxSize
+      );
+    }
   }
 
   return transformBodyByContentType(body, normalisedMediaType, binaryLogMaxSize);

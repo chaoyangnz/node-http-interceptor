@@ -12,6 +12,7 @@ import { ClientRequest } from 'http';
 import axios from 'axios';
 import * as http from 'http';
 import * as https from 'https';
+import * as nock from 'nock'
 
 const log = jest.fn().mockImplementation((...args) => {
   console.info(args);
@@ -37,7 +38,7 @@ describe('HttpInterceptor', () => {
     });
 
     it('should wrap http.request', async () => {
-      const res = await axios.get<string>('https://chao.yang.to');
+      const res = await axios.get<string>('https://chao.yang.so');
       expect(res.data).toBeTruthy();
       expect((http.request as any).__wrapped).toBeTruthy();
       expect((https.request as any).__wrapped).toBeTruthy();
@@ -49,7 +50,7 @@ describe('HttpInterceptor', () => {
 
       function assertRequestListener() {
         const [message, timing, requestId, request] = log.mock.calls[0];
-        expect(message).toEqual('🔵 GET https://chao.yang.to/');
+        expect(message).toEqual('🔵 GET https://chao.yang.so/');
         expect(timing.socket).toEqual({});
         expect(timing.request.initiated).toBeGreaterThan(0);
         expect(timing.request.write).toBeGreaterThanOrEqual(
@@ -58,12 +59,12 @@ describe('HttpInterceptor', () => {
         expect(timing.request.end).toBeGreaterThanOrEqual(timing.request.write);
         expect(requestId.length).toEqual(36);
         expect(request).toMatchObject({
-          url: 'https://chao.yang.to/',
+          url: 'https://chao.yang.so/',
           method: 'GET',
           headers: {
             accept: 'application/json, text/plain, */*',
             'user-agent': 'no-name',
-            host: 'chao.yang.to',
+            host: 'chao.yang.so',
           },
           body: '<0 bytes binary>',
         });
@@ -71,7 +72,7 @@ describe('HttpInterceptor', () => {
 
       function assertResponseListener(...args) {
         const [message, timing, requestId, request, response] = log.mock.calls[1];
-        expect(message).toEqual('🟢 200 GET https://chao.yang.to/');
+        expect(message).toEqual('🟢 200 GET https://chao.yang.so/');
         expect(timing.socket.lookup).toBeGreaterThan(0);
         expect(timing.socket.connect).toBeGreaterThan(timing.socket.lookup);
         expect(timing.socket.tls).toBeGreaterThan(timing.socket.lookup);
@@ -84,12 +85,12 @@ describe('HttpInterceptor', () => {
         expect(timing.response.end).toBeGreaterThanOrEqual(timing.response.read);
         expect(requestId.length).toEqual(36);
         expect(request).toMatchObject({
-          url: 'https://chao.yang.to/',
+          url: 'https://chao.yang.so/',
           method: 'GET',
           headers: {
             accept: 'application/json, text/plain, */*',
             'user-agent': 'no-name',
-            host: 'chao.yang.to',
+            host: 'chao.yang.so',
           },
           body: '<0 bytes binary>',
         });
@@ -108,7 +109,7 @@ describe('HttpInterceptor', () => {
 
     it('should unwrap http.request', async () => {
       httpInterceptor.disable();
-      const response = await axios.get<string>('https://chao.yang.to');
+      const response = await axios.get<string>('https://chao.yang.so');
       expect(response.data).toBeTruthy();
       expect((http.request as any).__wrapped).toBeFalsy();
       expect((https.request as any).__wrapped).toBeFalsy();
@@ -141,7 +142,7 @@ describe('HttpInterceptor', () => {
     })
 
     it('should not peek request body and response body', async () => {
-      const res = await axios.get<string>('https://chao.yang.to');
+      const res = await axios.get<string>('https://chao.yang.so');
       expect(res.data).toBeTruthy()
       expect(log).toHaveBeenCalledTimes(2)
       const request = log.mock.calls[0][3];
@@ -181,7 +182,7 @@ describe('HttpInterceptor', () => {
     });
 
     it('should wrap http.request and response with the stubbed', async () => {
-      const res = await axios.get<string>('https://chao.yang.to');
+      const res = await axios.get<string>('https://chao.yang.so');
       expect(res.data).toBeTruthy();
       expect((http.request as any).__wrapped).toBeTruthy();
       expect((https.request as any).__wrapped).toBeTruthy();
@@ -193,7 +194,7 @@ describe('HttpInterceptor', () => {
 
       function assertRequestListener() {
         const [message, timing, requestId, request] = log.mock.calls[0];
-        expect(message).toEqual('🔵 GET https://chao.yang.to/');
+        expect(message).toEqual('🔵 GET https://chao.yang.so/');
         expect(timing.socket).toEqual({});
         expect(timing.request.initiated).toBeGreaterThan(0);
         expect(timing.request.write).toBeGreaterThanOrEqual(
@@ -202,12 +203,12 @@ describe('HttpInterceptor', () => {
         expect(timing.request.end).toBeGreaterThanOrEqual(timing.request.write);
         expect(requestId.length).toEqual(36);
         expect(request).toMatchObject({
-          url: 'https://chao.yang.to/',
+          url: 'https://chao.yang.so/',
           method: 'GET',
           headers: {
             accept: 'application/json, text/plain, */*',
             'user-agent': 'no-name',
-            host: 'chao.yang.to',
+            host: 'chao.yang.so',
           },
           body: '<0 bytes binary>',
         });
@@ -221,7 +222,7 @@ describe('HttpInterceptor', () => {
           request,
           response,
         ] = log.mock.calls[1];
-        expect(message).toEqual('🟢 200 GET https://chao.yang.to/');
+        expect(message).toEqual('🟢 200 GET https://chao.yang.so/');
         expect(timing.socket.lookup).toBeFalsy();
         expect(timing.socket.connect).toBeFalsy();
         expect(timing.socket.tls).toBeFalsy();
@@ -236,12 +237,12 @@ describe('HttpInterceptor', () => {
         );
         expect(requestId.length).toEqual(36);
         expect(request).toMatchObject({
-          url: 'https://chao.yang.to/',
+          url: 'https://chao.yang.so/',
           method: 'GET',
           headers: {
             accept: 'application/json, text/plain, */*',
             'user-agent': 'no-name',
-            host: 'chao.yang.to',
+            host: 'chao.yang.so',
           },
           body: '<0 bytes binary>',
         });
@@ -257,6 +258,34 @@ describe('HttpInterceptor', () => {
       }
     });
   });
+
+  describe('nock compatibility', () => {
+    let httpInterceptor: HttpInterceptor;
+
+    beforeEach(() => {
+      httpInterceptor = new HttpInterceptor();
+      httpInterceptor.on('request.initiated', onRequestInitiated);
+      httpInterceptor.on('request.sent', onRequestSent);
+      httpInterceptor.on('response.received', onResponseReceived);
+      httpInterceptor.on('response.error', onResponseError);
+      httpInterceptor.enable();
+    });
+
+    afterEach(() => {
+      httpInterceptor.disable();
+      jest.clearAllMocks();
+    });
+
+    it('should work with nock', async () => {
+      nock('https://chao.yang.so').get('/test').reply(200, 'works')
+
+      const response = await axios.get('https://chao.yang.so/test')
+      expect(response.data).toEqual('works')
+      expect(log).toHaveBeenCalledTimes(2)
+    })
+
+
+  })
 });
 
 
