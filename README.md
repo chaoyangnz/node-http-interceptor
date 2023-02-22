@@ -47,11 +47,15 @@ interceptor.on('request.sent', (request: Request, context: RequestContext) => {
   // log the request
 })
 
-interceptor.on('response.received', (response: Response, context: RequestContext) => {
+interceptor.on('response.received', (request: Request, response: Response, context: RequestContext) => {
   // log the response
 })
 
-interceptor.on('response.error', (error: any, context: RequestContext) => {
+interceptor.on('response.error', (request: Request, error: any, context: RequestContext) => {
+  // log the error
+})
+
+interceptor.on('socket.error', (request: Request, error: any, context: RequestContext) => {
   // log the error
 })
 interceptor.enable()
