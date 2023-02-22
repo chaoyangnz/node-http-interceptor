@@ -15,7 +15,11 @@ import * as https from 'https';
 import * as nock from 'nock'
 
 const log = jest.fn().mockImplementation((...args) => {
-  console.info(args);
+  console.info(...args);
+});
+
+const warn = jest.fn().mockImplementation((...args) => {
+  console.warn(...args);
 });
 
 describe('HttpInterceptor', () => {
@@ -29,6 +33,7 @@ describe('HttpInterceptor', () => {
       httpInterceptor.on('request.sent', onRequestSent);
       httpInterceptor.on('response.received', onResponseReceived);
       httpInterceptor.on('response.error', onResponseError);
+      httpInterceptor.on('socket.error', onSocketError);
       httpInterceptor.enable();
     });
 
@@ -115,6 +120,17 @@ describe('HttpInterceptor', () => {
       expect((https.request as any).__wrapped).toBeFalsy();
       expect(log).not.toHaveBeenCalled();
     });
+
+    it('should trigger socket.event', async () => {
+
+      try {
+        await axios.get('https://chao.yang.to/test')
+      } catch (e) {
+        // ignore
+      }
+
+      expect(warn).toHaveBeenCalledTimes(1)
+    })
   })
 
   describe('body peek', () => {
@@ -284,7 +300,6 @@ describe('HttpInterceptor', () => {
       expect(log).toHaveBeenCalledTimes(2)
     })
 
-
   })
 });
 
@@ -344,7 +359,11 @@ function onResponseReceived(
  * @param error
  */
 function onResponseError(request: Request, error: Error, context: RequestContext) {
-  console.warn('🔴 error', error);
+  warn('🔴 error', error, request);
+}
+
+function onSocketError(request: Request, error: Error, context: RequestContext) {
+  warn('🔴 error', error, request);
 }
 
 function filteredRequest(request: Request) {

@@ -47,12 +47,20 @@ export interface Timing {
     connect?: number;
     // socket::secureConnect
     tls?: number;
+    // socket::ready
+    ready?: number
+    // socket::error
+    error?: number
+    // socket::close
+    close?: number
   };
   request: {
     // ClientRequest created
     initiated?: number;
-    // request::abort
-    abort?: number;
+    // request::close
+    finish?: number;
+    // request::finish
+    close?: number;
     // request::timeout
     timeout?: number;
     // request::write
@@ -75,6 +83,7 @@ export interface Timing {
 export type Event =
   | 'request.initiated'
   | 'request.sent'
+  | 'socket.error'
   | 'response.received'
   | 'response.error';
 
@@ -85,6 +94,8 @@ type Listener<T extends Event> = T extends 'request.initiated'
   : T extends 'response.received'
   ? (request: Request, response: Response, context: RequestContext) => void
   : T extends 'response.error'
+  ? (request: Request, error: Error, context: RequestContext) => void
+  : T extends 'socket.error'
   ? (request: Request, error: Error, context: RequestContext) => void
   : never;
 
@@ -221,7 +232,7 @@ export class HttpInterceptor {
     wrap(request, 'emit', (original) => {
       return (
         ...args: [
-          'response' | 'socket' | 'abort' | 'timeout',
+          'response' | 'socket' | 'abort' | 'close' | 'timeout' | 'finish',
           IncomingMessage | Socket,
         ]
       ) => {
@@ -229,7 +240,7 @@ export class HttpInterceptor {
           const [eventName, data] = args;
           switch (eventName) {
             case 'socket': {
-              this.wrapSocket(data as Socket, context);
+              this.wrapSocket(data as Socket, req, context);
               break;
             }
             case 'response': {
@@ -243,8 +254,13 @@ export class HttpInterceptor {
               this.wrapResponse(response, res, req, context);
               break;
             }
-            case 'abort': {
-              context.timing.request.abort = now();
+            case 'finish': {
+              context.timing.request.finish = now();
+              break;
+            }
+            case 'abort':
+            case 'close': {
+              context.timing.request.close = now();
               break;
             }
             // socket also has a timeout event, which is accurate?
@@ -409,10 +425,10 @@ export class HttpInterceptor {
     });
   }
 
-  private wrapSocket(socket: Socket, context: RequestContext) {
+  private wrapSocket(socket: Socket, req: Request, context: RequestContext) {
     wrap(socket, 'emit', (original) => {
-      return (...args: [string]) => {
-        const [eventName] = args;
+      return (...args: [string, any]) => {
+        const [eventName, data] = args;
         switch (eventName) {
           case 'lookup': {
             context.timing.socket.lookup = now();
@@ -424,6 +440,20 @@ export class HttpInterceptor {
           }
           case 'secureConnect': {
             context.timing.socket.tls = now();
+            break;
+          }
+          case 'ready': {
+            context.timing.socket.ready = now();
+            break;
+          }
+          case 'error': {
+            context.timing.socket.error = now();
+            this.emitter.emit('socket.error', req, data as Error, context)
+            break;
+          }
+          case 'close': {
+            context.timing.socket.close = now();
+            break;
           }
         }
 

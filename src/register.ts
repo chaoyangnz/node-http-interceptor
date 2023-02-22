@@ -7,7 +7,8 @@ import { formatError, formatRequest, formatResponse } from './format'
   const events = {
     'request.sent': false,
     'response.received': true,
-    'response.error': true
+    'response.error': true,
+    'socket.error': true
   }
   if (process.env.NODE_HTTP_INTERCEPTOR_VERBOSE) {
     for(const event of Object.keys(events)) {
@@ -22,6 +23,9 @@ import { formatError, formatRequest, formatResponse } from './format'
   }
   if(events['response.error']) {
     interceptor.on('response.error', (request, error, context) => console.warn(...formatError(request, error, context)))
+  }
+  if(events['socket.error']) {
+    interceptor.on('socket.error', (request, error, context) => console.warn(...formatError(request, error, context)))
   }
 
   interceptor.enable()
